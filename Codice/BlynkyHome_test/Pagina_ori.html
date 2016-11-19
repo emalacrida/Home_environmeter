@@ -1,0 +1,50 @@
+
+             "<!DOCTYPE html>\n\
+             <html>\n\
+             <head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
+             <link rel=\"stylesheet\" href=\n\"http://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css\"><script src=\n\"http://code.jquery.com/jquery-1.11.3.min.js\"></script><script src=\n\"http://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js\"></script></head>\n\
+<style type=\"text/css\">\n\
+    .ui-header .ui-title {margin: 0 10%}\n\
+</style>\n\
+<body>\n\
+<div data-role=\"page\">\n\
+  <div data-role=\"header\">\n\
+    <h1>Huis automatisering V%s</h1>\n\
+  </div>\n\
+
+  
+  <div data-role=\"main\" class=\"ui-content\">\n\
+    <form method=\"post\" action=\"licht.html\">\n\
+      <label for=\"keuken\">Keuken dimmer</label>\n\
+      <input type=\"range\" name=\"keuken\" id=\"keuken\" value=\"%d\" min=\"0\" max=\"15\">\n\
+      <label for=\"gang\">Gang dimmer</label>\n\
+      <input type=\"range\" name=\"gang\" id=\"gang\" value=\"%d\" min=\"0\" max=\"15\">\n\
+      <input type=\"submit\" data-inline=\"true\" name=\"button\" value=\"Licht aan\">\n\
+      <input type=\"submit\" data-inline=\"true\" name=\"button\" value=\"Licht uit\">\n\
+    </form>\n\
+  </div>\n\
+  <div data-role=\"main\" class=\"ui-content\">\n\
+  <text id=\"time\"></text><br><br>\n\
+  Temperatuur: <text id=\"temperatureField\"></text> C<br>\n\
+  Luchtdruk: <text id=\"pressureField\"></text> mb<br>\n\
+  Luchtvochtigheid: <text id=\"humidityField\"></text><br>\n\
+  Omgevingslicht: <text id=\"ambientLightField\"></text><br>\n\
+  </div>\n\
+</div>\n\
+<script>\n\
+setInterval(getData, 10000);\n\
+function getData() {\n\
+        $.getJSON(\"http://%s.local/data\", function(data){\n\
+            var d = new Date();\n\
+            document.getElementById(\"time\").innerHTML=d;\n\
+            document.getElementById(\"temperatureField\").innerHTML=data[\"Temperature\"];\n\
+            document.getElementById(\"humidityField\").innerHTML=data[\"Humidity\"];\n\
+            document.getElementById(\"pressureField\").innerHTML=data[\"Pressure\"];\n\
+            document.getElementById(\"ambientLightField\").innerHTML=data[\"ambientLight\"];\n\
+        });\n\
+}\n\
+getData();\n\
+</script>\n\
+</body>\n\
+
+</html>", VERSION, kitchenIntensity, hallIntensity, HOSTNAME

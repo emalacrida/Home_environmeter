@@ -1,0 +1,1 @@
+Copia delle librerie usate nel progetto.

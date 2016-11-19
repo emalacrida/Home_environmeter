@@ -1,0 +1,1 @@
+Tutte le parti di codice necessari per il progetto incluse librerie.

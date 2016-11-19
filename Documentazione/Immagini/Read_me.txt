@@ -1,0 +1,1 @@
+Fotografie ed immagini dei componenti e parti del progetto.

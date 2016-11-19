@@ -1,0 +1,1 @@
+I data-sheet dei componenti utilizzati nel progetto.
