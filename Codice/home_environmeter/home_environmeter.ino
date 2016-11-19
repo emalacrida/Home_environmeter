@@ -70,9 +70,9 @@
 
 // Sensor calibration values ===================================
 
-float bhtTempCalib = 0;
-float bmpTempCalib = 0;
+float bhtTempCalib = -3.8;
 float bhtHumiCalib = 0;
+float bmpTempCalib = 0;
 
 // Specific installation setup parameters ======================
 
@@ -191,10 +191,7 @@ void loop()
   if (WiFi.status() != WL_CONNECTED) {
     connectWiFi();
   }
-  /* togliere per OTA
-  server.handleClient();
-  ArduinoOTA.handle();
-  if (!updating){*/
+
   Blynk.run();
   timer.run();
   Blynk.run();
@@ -210,111 +207,12 @@ void loop()
   //  }
 }
 
-/* da togliere non richiamata
-void stateMachine()
-{
-  static int prevMode = 3;
-  static unsigned long lastMovementDetected = 0;
-  static unsigned long previousTime = 0;
-  unsigned long currentMillis = millis();
-  unsigned long currentTime = (getTime(TIMEZONE, DAYLIGHTSAVINGTIME) % 86400L);
-  if (currentMode != prevMode){
-    prevMode = currentMode;
-    switch (currentMode) {
-    case 0:
-      licht_uit();
-      break;
-    case 2:
-      licht_aan();
-      break;
-    }
-  }
-  switch (currentMode) {
-  case 1:
-    if ((lightStatus == LOW) & (ambientLight < lightTreshold)) {
-      lightStatus == HIGH;
-      licht_aan();
-    }
-    break;
-  case 3:
-    if (movementDetected) {
-      if ((lightStatus == LOW) & (ambientLight < lightTreshold)){
-            licht_aan();
-            lastMovementDetected = currentMillis;
-      }
-    }
-    if (lightStatus == HIGH){
-      if ((currentMillis - lastMovementDetected) > MOVEMENT_TIMEOUT){
-        licht_uit();
-      }
-    }
-    break;
-  }
-  if (movementDetected) {
-    if (alarmArmed){
-      alarmArmed = LOW;
-      Blynk.notify("Movement detected in the livingroom!!");
-    }
-    lastMovementDetected = currentMillis;
-    movementDetected = 0;
-  }
-  if ((previousTime < SWITCH_MODE3) & (currentTime >= SWITCH_MODE3)) {
-    currentMode = 3;
-    BLYNK_LOG("Switching to mode %d", currentMode);
-    previousTime = currentTime;
-  }
-  if ((previousTime < SWITCH_MODE2) & (currentTime >= SWITCH_MODE2)) {
-    currentMode = 2;
-    BLYNK_LOG("Switching to mode %d", currentMode);
-    previousTime = currentTime;
-  }
-  if ((previousTime < SWITCH_MODE1) & (currentTime >= SWITCH_MODE1)) {
-    currentMode = 1;
-    BLYNK_LOG("Switching to mode %d", currentMode);
-    previousTime = currentTime;
-  }
-  if ((previousTime < SWITCH_MODE0) & (currentTime >= SWITCH_MODE0)) {
-    currentMode = 0;
-    BLYNK_LOG("Switching to mode %d", currentMode);
-    previousTime = currentTime;
-  }
-  previousTime = currentTime;
-}
-fine togliere state machine */
-
 void callBack() {
   // copiate per compilare
   static long counter = 0;
   static bool LEDstatus = HIGH;
   digitalWrite(LED, LEDstatus);
-  /* non si legge la EEPROM
-  int oldHallIntensity;
-  EEPROM.get(ADDR_HALL, oldHallIntensity);
-  int oldKitchenIntensity;
-  EEPROM.get(ADDR_KITCHEN, oldKitchenIntensity);
-  int oldLightTreshold;
-  EEPROM.get(ADDR_LIGHTTRESHOLD, oldLightTreshold);
-  static long counter = 0;
-  static bool LEDstatus = HIGH;
-  digitalWrite(LED, LEDstatus);
-  if (oldHallIntensity != hallIntensity){
-    if (lightStatus){
-      switchKaku(transmitterPIN, NEW_KAKU_TRANSMITTERID2, 1, 3, true, 3, hallIntensity);
-    }
-    EEPROM.put(ADDR_HALL, hallIntensity);
-    EEPROM.commit();
-  }
-  if (oldKitchenIntensity != kitchenIntensity){
-    if (lightStatus){
-      switchKaku(transmitterPIN, NEW_KAKU_TRANSMITTERID2, 1, 4, true, 3, kitchenIntensity);
-    }
-    EEPROM.put(ADDR_KITCHEN, kitchenIntensity);
-    EEPROM.commit();
-  }
-  if (oldLightTreshold != lightTreshold){
-    EEPROM.put(ADDR_LIGHTTRESHOLD, lightTreshold);
-    EEPROM.commit();
-  }  */
+
   LEDstatus = !LEDstatus;
   counter += 1;
   if (counter > 1000) {
@@ -322,7 +220,6 @@ void callBack() {
   }
   long uptime = millis() / 60000L;
 
-  //  ambientLight = analogRead(A0);   //sostituito da misura gas
   Blynk.virtualWrite(V2, uptime);
   Blynk.run();
   Blynk.virtualWrite(V8, LEDstatus * 255);
@@ -355,46 +252,6 @@ void notifyUptime()
   long uptime = millis() / 60000L;
   Blynk.notify(String("Running for ") + uptime + " minutes.");
 }
-
-/*BLYNK_WRITE(31)
-{
-  if(param[0].asInt()){
-    currentMode = (currentMode + 1) % 4;
-  }
-}
-
-BLYNK_WRITE(27)
-{
-  if(param[0].asInt()){
-    alarmArmed = HIGH;
-  }
-}
-
-BLYNK_WRITE(29)
-{
-  if(param[0].asInt()){
-    if (lightStatus){
-      licht_uit();
-    } else {
-      licht_aan();
-    }
-  }
-}
-
-BLYNK_WRITE(26)
-{
-  lightTreshold = param[0].asInt();
-}
-
-BLYNK_WRITE(10)
-{
-  kitchenIntensity = param[0].asInt();
-}
-
-BLYNK_WRITE(12)
-{
-  hallIntensity = param[0].asInt();
-}*/
 
 void readAmbientLight()                        // con GY 30
 {
@@ -594,12 +451,9 @@ void readPressure()
   char status;
   static double T, P, p0, a;
 
-  // Loop here getting pressure readings every 10 seconds.
-
   // If you want sea-level-compensated pressure, as used in weather reports,
   // you will need to know the altitude at which your measurements are taken.
   // We're using a constant called ALTITUDE in this sketch:
-
 
   // If you want to measure altitude, and not pressure, you will instead need
   // to provide a known baseline pressure. This is shown at the end of the sketch.
