@@ -18,6 +18,19 @@
  * accessing the web server on ESP
  * 
  * ===============================================
+ *
+ *	A0	ADC0   - Sensore Gas MQ 135
+ *	D0	GPIO16 - OUT LED
+ *	D1	GPIO5  - SCL I2C Light and Pressure
+ *	D2	GPIO4  - SDA I2C Light and Pressure
+ *	D3	GPIO0  - NC
+ *	D4	GPIO2  - IN Interrupt da sensore PIR
+ *	D5	GPIO14 - IN sensose DHT esterno per calibrazione
+ *	D6	GPIO12 - IN sensore Temperatura DHT
+ *	D7	GPIO13 - OUT Led RGB Rosso
+ *	D8	GPIO15 - OUT Led RGB Verde
+ *	D9	GPIO3  - OUT Led RGB Blu
+ *	D10	GPIO1  - NC
  * 
  *   V0 = lightStatus
  *   V1 = temperature from BMP180
@@ -29,7 +42,8 @@
  *   V7 = counter
  *   V8 = LEDstatus
  *   V9 = Pressure
- *   V10 = 
+ *   V10 = Humidity from external DHT
+ *   V11 = Temperature from external DHT
  *   V15 = airqual              Aggiunto
  *
  *
@@ -47,7 +61,7 @@
 #include <NTPtime.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
-#include "DHT.h"
+#include <DHT.h>
 #include <SFE_BMP180.h>
 #include <Wire.h>
 #include <ArduinoJson.h>
@@ -62,31 +76,35 @@
 //#define ADDR_HALL 4
 //#define ADDR_LIGHTTRESHOLD 8
 #define DHTPIN 12             // D6 sensore umidita
+#define DHT2PIN 14            // D5 sensore temperatura esterno per taratura
 #define DHTTYPE DHT22         // tipo snsore umidita
+#define DHT2TYPE DHT22        // tipo snsore umidita esterno
 #define LED 16
-//#define transmitterPIN 14     // D5  da liberare
-#define airqualityPIN 12      // D6 analog inpot A0
+#define airqualityPIN 12      // analog input A0
 #define movementPIN 2         // D4
 
 // Sensor calibration values ===================================
 
-float bhtTempCalib = -3.8;
-float bhtHumiCalib = 0;
-float bmpTempCalib = 0;
+float dhtTempCalib = -0.5;
+float dhtHumiCalib = 0;
+float bmpTempCalib = -1.2;
 
 // Specific installation setup parameters ======================
 
-#define SID  "adircalam2"     // wifi SSID
-#define PAS  "casa.em.230552"
+//#define SID  "adircalam2"     // wifi SSID
+//#define PAS  "casa.em.230552"
 //#define SID  "BiblioWiFi"     // wifi bilioteca
 //#define PAS  ""
+#define SID "BiblioStaff"      // Pertini
+#define PAS "wsx.okn2a"
 #define HOMESERVER  "X.X.X.X"
 #define thingspeakAPIkey "XNP8Q4DF8DWU7F0P"
 #define MOVEMENT_TIMEOUT 600000
 #define TIMEZONE 1
 #define DAYLIGHTSAVINGTIME 1
-#define ALTITUDE 200.0        // sensor altitude for sea level pressure calc.
-#define HOSTNAME "emiot"
+//#define ALTITUDE 200.0        // Legnano sensor altitude for sea level pressure calc.
+#define ALTITUDE 154.0        // Cinisello
+#define HOSTNAME "environmeter"
 #define VERSION "0.042"
 #ifdef HOME
 #define AUTH "7bb63a4186694150b71c66ce29ee6c9c"
@@ -96,29 +114,29 @@ float bmpTempCalib = 0;
 
 // End specific installation setup parameters ==================
 
-float temperature = 0;
-float bhttemp = 0;
-bool movementDetected = 0;
-bool updating = 0;
+float temperature = 0;               // Temperatura BMP
+float bmptemp = 0;
+float dhttemp = 0;                   // Temperatura DHT ??????
+float temp = 0;                      // Temperatura DHT22 corretta
+float exttemp = 0;                   // Temperatura sensore esterno DHT
 int countMovmentsInterval = 300000;  // aggiunto intervallo calcolo numero movimenti
 int countMovments = 0;               // agiunto Contatore sensore movimento
 int currentMode = 3;
-int kitchenIntensity;        // togliere quando di sistema weberver
-int hallIntensity;
-int airQuality;              // togliere quando di sistema weberver
-double bar, hum;
-uint16_t ambientLight;
+int kitchenIntensity;                // togliere quando di sistema weberver
+int hallIntensity;                   // togliere quando di sistema weberver
+int airQuality = 0;                  // Indice qualita aria
+double bar = 0;                      // Pressione 
+double hum = 0;                      // Umidita DHT22 corretta
+double exthum = 0;                   // Umidita esterna
+uint16_t ambientLight = 0;
 unsigned long updateStarted_time = 0;
-String s_hum;
-// OneWire  ds(temperaturePIN);     // serve solo per sensore temperatura
-//bool lightStatus = LOW;
-//bool alarmArmed = LOW;
-//int lightTreshold;
-//KaKuSwitch kaKuSwitch(transmitterPIN);
+bool movementDetected = 0;
+bool updating = 0;
 
 SimpleTimer timer;
 SFE_BMP180 pressure;
 DHT dht(DHTPIN, DHTTYPE);
+DHT dht2(DHT2PIN, DHT2TYPE);
 
 BH1750 lightMeter;
 
@@ -128,7 +146,6 @@ ESP8266WebServer server(80);
 void connectWiFi(const char* ssid = SID, const char* pass = PAS, int timeout = 10);
 void callBack();
 void readNTP();
-//void readTemp();             // modificare per NTP
 void readAirquality();
 void readAmbientLight();
 void readHumiditySensor();
@@ -138,19 +155,11 @@ void interruptHandler();
 void startWebServer();
 void handleSensorData();
 void stateMachine();
-//void licht_uit();
-//void licht_aan();
 void updateThingspeak(String APIkey, String tsData);
 void handleRoot();
 
 void setup()
 {
-  /* Commentato non si usa EEPROM
-   *
-    EEPROM.begin(512);
-    EEPROM.get(ADDR_KITCHEN, kitchenIntensity);
-    EEPROM.get(ADDR_HALL, hallIntensity);
-    EEPROM.get(ADDR_LIGHTTRESHOLD, lightTreshold);*/
   connectWiFi();
 #ifdef HOME
   Blynk.config(AUTH, HOMESERVER);
@@ -158,7 +167,14 @@ void setup()
   Blynk.config(AUTH);
 #endif
 
-// Set time intervals for routines execution
+/*  Set time intervals for routines execution
+ *  temperatura e umidita DHT22 every 5 second mean on 10 values
+ *  pressione e temperatura BMP every 5 second mean on 10 values
+ *  luce ambiente every 5 second mean on 10 values
+ *  air quality every 5 second mean on 10 values
+ *  
+ *  data to Thingspeak every 5 minutes
+*/
 
   timer.setInterval(1000L, callBack);
   //timer.setInterval(3600000L, notifyUptime);
@@ -179,11 +195,14 @@ void setup()
 
   Serial.begin(115200);
   dht.begin();
+  dht2.begin();
+  
   lightMeter.begin();
   delay(2000);  
   attachInterrupt(digitalPinToInterrupt(movementPIN), interruptHandler, HIGH); //cambiato CHANGE in HIGH
   pressure.begin();
   startWebServer();
+  
 }
 
 void loop()
@@ -191,20 +210,9 @@ void loop()
   if (WiFi.status() != WL_CONNECTED) {
     connectWiFi();
   }
-
-  Blynk.run();
-  timer.run();
-  Blynk.run();
-
-  //    stateMachine();         // non dovrebbe servire
-  //    Blynk.run();
-
-  //  } else {
-  //      if ((millis() - updateStarted_time) > 300000){
-  //        updating = false;
-  //attachInterrupt(digitalPinToInterrupt(movementPIN), interruptHandler, CHANGE); ????????
-  //      }
-  //  }
+    Blynk.run();
+    timer.run();
+    Blynk.run();
 }
 
 void callBack() {
@@ -241,9 +249,13 @@ void callBack() {
   //  Blynk.run();
   Blynk.virtualWrite(V15, airQuality);
   Blynk.run();
-  Blynk.virtualWrite(V1, temperature);
+  Blynk.virtualWrite(V1, bmptemp);
   Blynk.run();
   Blynk.virtualWrite(V14, countMovments); // Aggiunto
+  Blynk.run();                            // Aggiunto
+  Blynk.virtualWrite(V10, exthum);        // Aggiunto
+  Blynk.run();                            // Aggiunto
+  Blynk.virtualWrite(V11, exttemp);       // Aggiunto
   Blynk.run();                            // Aggiunto
 }
 
@@ -265,6 +277,7 @@ void readAmbientLight()                        // con GY 30
 void readAirquality()
 {
   airQuality = analogRead(A0);
+  airQuality = 1024 - airQuality;
   //Serial.print("Qualita aria: ");
   //Serial.println(airQuality);
   BLYNK_LOG("Airquality: %i", airQuality);
@@ -293,14 +306,18 @@ void periodicUpdateThingspeak()
   char m_buffer[10];                     // aggiunto per contare movimenti
   char a_buffer[10];                     // aggiunto airquality
   char tb_buffer[10];                    // temperatura da BHT
-  String humidityString = dtostrf(hum, 5, 2, h_buffer);
-  String pressureString = dtostrf(bar, 7, 2, p_buffer);
+  char tex_buffer[10];                   // temperatura DHT esterno
+//  char hex_buffer[10];                   // umidita DHT esterno
+  String humidityString = dtostrf(hum, 5, 1, h_buffer);
+  String pressureString = dtostrf(bar, 5, 1, p_buffer);
   String tempString = dtostrf(temperature, 5, 1, t_buffer);
-  String airString = dtostrf(airQuality, 4, 1, a_buffer);
   String lightString = dtostrf(ambientLight, 5, 1, l_buffer);
   String movementsString = dtostrf(countMovments, 4, 0, m_buffer);  // aggiunto per contare movimenti
-  String temphString = dtostrf(bhttemp, 5, 1, tb_buffer);
-  updateThingspeak(thingspeakAPIkey, "field1=" + tempString + "&field2=" + humidityString + "&field3=" + pressureString + "&field4=" + lightString + "&field5=" + movementsString + "&field6=" + airString + "&field7=" + temphString);
+  String airString = dtostrf(airQuality, 4, 1, a_buffer);
+  String tempdhtString = dtostrf(dhttemp, 5, 1, tb_buffer);
+  String tempexString = dtostrf(exttemp, 5, 1, tex_buffer);
+//  String humexString = dtostrf(h2, 5, 1, hex_buffer);
+  updateThingspeak(thingspeakAPIkey, "field1=" + tempString + "&field2=" + humidityString + "&field3=" + pressureString + "&field4=" + lightString + "&field5=" + movementsString + "&field6=" + airString + "&field7=" + tempdhtString + "&field8=" + tempexString);
 
 }
 
@@ -417,6 +434,12 @@ void readHumiditySensor()
   float h = dht.readHumidity();
   float t = dht.readTemperature();
   float f = dht.readTemperature(true);
+  
+// letture DHT esterno per taratura da commentare =========
+  float h2 = dht2.readHumidity();
+  float t2 = dht2.readTemperature();
+  float f2 = dht2.readTemperature(true);
+// ========================================================
 
   if (isnan(h) || isnan(t) || isnan(f)) {
     BLYNK_LOG("Failed to read from DHT sensor!");
@@ -427,23 +450,42 @@ void readHumiditySensor()
   float hif = dht.computeHeatIndex(f, h);
   // Compute heat index in Celsius (isFahreheit = false)
   float hic = dht.computeHeatIndex(t, h, false);
-  Blynk.virtualWrite(V5, h);
+  hum = h+dhtHumiCalib;       // DHT humidity compensated
+  temp = t+dhtTempCalib;      // DHT temperature compensated
+  dhttemp = temp;
+  exttemp = t2;
+  exthum = h2;
+//  temperature = temp;         // temperature for thingspeak
+  
+  Blynk.virtualWrite(V5, hum);
   Blynk.run();
-  Blynk.virtualWrite(V6, t);
+  Blynk.virtualWrite(V6, temp);
   Blynk.run();
-  hum = h;
-  bhttemp = t;      // Sostituisce set var temperatura letta in readTemp
+
   // Print for test
   Serial.print("Humidity: ");
-  Serial.print(h);
-  //  Serial.print(" %\t");
+  Serial.print(hum, 1);
   Serial.print(" - Temperature: ");
-  Serial.print(t);
+  Serial.print(temp, 1);
   Serial.print("*C ");
   Serial.print(" - Heat index: ");
-  Serial.print(hic);
-  Serial.println("*C ");
+  Serial.print(hic, 1);
+  Serial.print("*C ");
+  Serial.println("");
   //BLYNK_LOG("Humidity: %E", hum);
+
+// DHT external print for sensor calibration
+  Blynk.virtualWrite(V10, exthum);
+  Blynk.run();
+  Blynk.virtualWrite(V11, exttemp);
+  Blynk.run();
+  Serial.print("Hum-ext : ");
+  Serial.print(h2, 1);
+  Serial.print(" - Temper-ext : ");
+  Serial.print(t2, 1);
+  Serial.println("*C ");
+// ==============
+  
 }
 
 void readPressure()
@@ -521,11 +563,13 @@ void readPressure()
   Blynk.virtualWrite(V9, int(p0));
   Blynk.run();
   bar = p0;
-  Serial.print("Pressure - temp: ");
-  Serial.print(bar);
-  Serial.print(" - ");
-  Serial.println(T);
-  temperature = T;       // Sostituisce set var temperatura letta in readTemp
+  Serial.print("BMP-Pres: ");
+  Serial.print(bar, 1);
+  Serial.print(" - Temp. BMP: ");
+  Serial.print(T, 1);
+  Serial.println("");
+  bmptemp = T+bmpTempCalib;   // BMP temperature compensated
+  temperature = bmptemp;      // temperature for thingspeak
 }
 
 void handleRoot() {
